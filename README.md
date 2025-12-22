@@ -1,6 +1,6 @@
 
 ## Overview
-Zerodha is a leading online stock trading platform in India, offering a range of financial services including equity trading, commodity trading, mutual funds, and more.
+TradeXAi is a leading online stock trading platform in India, offering a range of financial services including equity trading, commodity trading, mutual funds, and more.
 ## Features
 - Low brokerage fees
 - User-friendly trading interface
