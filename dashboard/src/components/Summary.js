@@ -11,7 +11,7 @@ const Summary = ({ userId }) => {
   // API Configuration
   const API_CONFIG = {
     ALPHA_VANTAGE: {
-      key: 'demo',
+      key: process.env.REACT_APP_ALPHA_VANTAGE_KEY || 'demo',
       baseUrl: 'https://www.alphavantage.co/query'
     }
   };
