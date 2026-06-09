@@ -36,7 +36,10 @@ function SignUp() {
     }
 
     try {
-      const response = await axios.post("http://localhost:8000/api/auth/signup", {
+      const apiBaseUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+      const dashboardBaseUrl = process.env.REACT_APP_DASHBOARD_URL || "http://localhost:3001";
+
+      const response = await axios.post(`${apiBaseUrl}/api/auth/signup`, {
         username: name,
         email,
         password,
@@ -50,7 +53,7 @@ function SignUp() {
         }
 
         // Redirect after success
-        window.location.href = "http://localhost:3001/dashboard";
+        window.location.href = `${dashboardBaseUrl}/dashboard`;
       } else {
         setError(response.data.message || "Signup failed.");
       }

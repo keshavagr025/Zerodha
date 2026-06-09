@@ -32,7 +32,10 @@ function Login() {
     }
 
     try {
-      const response = await axios.post("http://localhost:8000/api/auth/login", {
+      const apiBaseUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+      const dashboardBaseUrl = process.env.REACT_APP_DASHBOARD_URL || "http://localhost:3001";
+
+      const response = await axios.post(`${apiBaseUrl}/api/auth/login`, {
         email,
         password,
       });
@@ -45,7 +48,7 @@ function Login() {
         }
 
         // Redirect to dashboard
-        window.location.href = "http://localhost:3001/dashboard";
+        window.location.href = `${dashboardBaseUrl}/dashboard`;
       } else {
         setError(response.data.message || "Login failed.");
       }
