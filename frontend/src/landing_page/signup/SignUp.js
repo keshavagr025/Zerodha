@@ -53,7 +53,7 @@ function SignUp() {
         }
 
         // Redirect after success
-        window.location.href = `${dashboardBaseUrl}/dashboard`;
+        window.location.href = `${dashboardBaseUrl}`;
       } else {
         setError(response.data.message || "Signup failed.");
       }
