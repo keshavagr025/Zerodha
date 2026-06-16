@@ -31,7 +31,9 @@ const { UsersModel } = require("./models/UsersModel");
 const fetchLivePrice = require("./utils/fetchIndianStockPrice.js");
 
 // Routes
+const mlRoute = require("./routes/MLRoute");
 app.use("/api/auth", authRoute);
+app.use("/api/ml", mlRoute);
 
 app.get("/allHoldings", async (req, res) => {
   const allHoldings = await HoldingsModel.find({});

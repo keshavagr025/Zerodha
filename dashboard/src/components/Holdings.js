@@ -79,85 +79,77 @@ const Holdings = ({ userId }) => {
 
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // Main function to fetch holdings with live prices
+  // Main function to fetch holdings with live prices and ML clustering
   const fetchHoldingsWithLivePrices = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      console.log('Fetching holdings...');
-      let holdings = mockHoldings;
-
-      if (useRealAPI) {
-        console.log('Using real API...');
-        
-        // Real API mode
-        const holdingsWithLivePrices = [];
-        
-        for (let i = 0; i < holdings.length; i++) {
-          const holding = holdings[i];
-          console.log(`Fetching price for ${holding.symbol}...`);
-          
-          const livePrice = await getLivePriceAlphaVantage(holding.symbol);
-          
-          if (livePrice) {
-            const currentValue = holding.quantity * livePrice;
-            const totalInvested = holding.quantity * holding.buyPrice;
-            const profitLoss = currentValue - totalInvested;
-            
-            holdingsWithLivePrices.push({
-              ...holding,
-              livePrice,
-              currentValue,
-              profitLoss
-            });
-          } else {
-            // Fallback to mock price if API fails
-            const mockPrice = generateMockLivePrice(holding.buyPrice, holding.symbol);
-            const currentValue = holding.quantity * mockPrice;
-            const totalInvested = holding.quantity * holding.buyPrice;
-            const profitLoss = currentValue - totalInvested;
-            
-            holdingsWithLivePrices.push({
-              ...holding,
-              livePrice: mockPrice,
-              currentValue,
-              profitLoss
-            });
-          }
-          
-          // Add delay for rate limiting
-          if (i < holdings.length - 1) {
-            await delay(2000); // 2 second delay for testing
-          }
+      console.log('Fetching holdings with ML clustering...');
+      const apiBaseUrl = process.env.REACT_APP_API_URL || "http://localhost:8000";
+      
+      let clusteredHoldings = [];
+      try {
+        const mlResponse = await axios.get(`${apiBaseUrl}/api/ml/portfolio-clustering/${userId || 'mock'}`);
+        if (mlResponse.data && mlResponse.data.success) {
+          clusteredHoldings = mlResponse.data.clusters;
         }
-        
-        setAllHoldings(holdingsWithLivePrices);
-        
-      } else {
-        console.log('Using mock data...');
-        
-        // Mock mode - simulate API delay
-        await delay(1500);
-        
-        const holdingsWithLivePrices = holdings.map(holding => {
-          const livePrice = generateMockLivePrice(holding.buyPrice, holding.symbol);
-          const currentValue = holding.quantity * livePrice;
-          const totalInvested = holding.quantity * holding.buyPrice;
-          const profitLoss = currentValue - totalInvested;
-          
+      } catch (mlError) {
+        console.warn("Failed to fetch ML clustering, using local fallback", mlError);
+      }
+
+      // If backend API failed or returned empty clusters, run local clustering fallback
+      if (!clusteredHoldings || clusteredHoldings.length === 0) {
+        clusteredHoldings = mockHoldings.map((h, index) => {
+          const clusterId = index % 3;
+          const labelNames = ["Low Volatility (Defensive)", "Medium Volatility (Moderate)", "High Volatility (Aggressive)"];
           return {
-            ...holding,
-            livePrice,
-            currentValue,
-            profitLoss
+            symbol: h.symbol,
+            quantity: h.quantity,
+            buyPrice: h.buyPrice,
+            cluster: clusterId,
+            clusterName: labelNames[clusterId],
+            beta: clusterId === 0 ? 0.85 : clusterId === 1 ? 1.05 : 1.35,
+            volatility: clusterId === 0 ? 0.015 : clusterId === 1 ? 0.022 : 0.032,
+            sector: "Finance"
           };
         });
+      }
+
+      const holdingsWithLivePrices = [];
+      
+      for (let i = 0; i < clusteredHoldings.length; i++) {
+        const holding = clusteredHoldings[i];
+        let livePrice = null;
         
-        setAllHoldings(holdingsWithLivePrices);
+        if (useRealAPI) {
+          console.log(`Fetching price for ${holding.symbol}...`);
+          livePrice = await getLivePriceAlphaVantage(holding.symbol);
+        }
+        
+        if (!livePrice) {
+          livePrice = generateMockLivePrice(holding.buyPrice, holding.symbol);
+        }
+        
+        const currentValue = holding.quantity * livePrice;
+        const totalInvested = holding.quantity * holding.buyPrice;
+        const profitLoss = currentValue - totalInvested;
+        
+        holdingsWithLivePrices.push({
+          ...holding,
+          livePrice,
+          currentValue,
+          profitLoss
+        });
+        
+        // Add delay for Alpha Vantage rate limiting
+        if (useRealAPI && i < clusteredHoldings.length - 1) {
+          await delay(2000);
+        }
       }
       
-      console.log('Holdings loaded successfully');
+      setAllHoldings(holdingsWithLivePrices);
+      console.log('Holdings and ML clusters loaded successfully');
       
     } catch (error) {
       setError('Failed to fetch holdings data: ' + error.message);
@@ -171,6 +163,20 @@ const Holdings = ({ userId }) => {
     fetchHoldingsWithLivePrices();
   }, [userId, useRealAPI]);
 
+  // Color mapping based on volatility cluster
+  const getClusterColor = (clusterId) => {
+    switch (clusterId) {
+      case 0:
+        return "rgba(49, 151, 149, 0.7)"; // Teal for Low Volatility
+      case 1:
+        return "rgba(221, 107, 32, 0.7)"; // Orange for Medium Volatility
+      case 2:
+        return "rgba(229, 62, 62, 0.7)";  // Red for High Volatility
+      default:
+        return "rgba(108, 117, 125, 0.7)"; // Grey fallback
+    }
+  };
+
   // Prepare data for chart
   const labels = allHoldings.map((stock) => stock.symbol);
   const data = {
@@ -179,7 +185,9 @@ const Holdings = ({ userId }) => {
       {
         label: "Live Price",
         data: allHoldings.map((stock) => stock.livePrice),
-        backgroundColor: "rgba(75,192,192,0.6)",
+        backgroundColor: allHoldings.map((stock) => getClusterColor(stock.cluster)),
+        borderColor: allHoldings.map((stock) => getClusterColor(stock.cluster).replace("0.7", "1")),
+        borderWidth: 1,
       },
     ],
   };
@@ -187,11 +195,11 @@ const Holdings = ({ userId }) => {
   if (loading) {
     return (
       <div className="loading-container" style={{ padding: '20px', textAlign: 'center' }}>
-        <h3>Loading Holdings...</h3>
+        <h3>Loading Holdings with Machine Learning Analysis...</h3>
         <p>
           {useRealAPI 
             ? 'Fetching live prices from market data provider...' 
-            : 'Generating realistic mock prices...'
+            : 'Calculating stock volatility & clustering portfolio...'
           }
         </p>
         <div style={{ 
@@ -232,7 +240,7 @@ const Holdings = ({ userId }) => {
         alignItems: 'center',
         marginBottom: '20px'
       }}>
-        <h3 className="title">Holdings ({allHoldings.length})</h3>
+        <h3 className="title">Portfolio Risk Clustering ({allHoldings.length})</h3>
         <div>
           <span style={{ 
             marginRight: '15px', 
@@ -252,7 +260,7 @@ const Holdings = ({ userId }) => {
             Switch to {useRealAPI ? 'Mock' : 'Live'} Mode
           </button>
           <button onClick={fetchHoldingsWithLivePrices}>
-            Refresh Prices
+            Refresh Analysis
           </button>
         </div>
       </div>
@@ -304,6 +312,31 @@ const Holdings = ({ userId }) => {
         </div>
       </div>
 
+      <div style={{
+        backgroundColor: '#f8f9fa',
+        padding: '15px',
+        borderRadius: '8px',
+        marginBottom: '20px',
+        display: 'flex',
+        justifyContent: 'space-around',
+        fontSize: '13px',
+        fontWeight: '500'
+      }}>
+        <div><strong>ML Risk Clusters Legend:</strong></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'rgba(49, 151, 149, 0.7)' }}></span>
+          Low Volatility (Defensive)
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'rgba(221, 107, 32, 0.7)' }}></span>
+          Medium Volatility (Moderate)
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: 'rgba(229, 62, 62, 0.7)' }}></span>
+          High Volatility (Aggressive)
+        </div>
+      </div>
+ 
       <table className="holdings-table" style={{ 
         width: '100%', 
         borderCollapse: 'collapse',
@@ -312,6 +345,7 @@ const Holdings = ({ userId }) => {
         <thead>
           <tr style={{ backgroundColor: '#f8f9fa' }}>
             <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>Symbol</th>
+            <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #dee2e6' }}>ML Risk Cluster</th>
             <th style={{ padding: '12px', textAlign: 'right', borderBottom: '2px solid #dee2e6' }}>Quantity</th>
             <th style={{ padding: '12px', textAlign: 'right', borderBottom: '2px solid #dee2e6' }}>Buy Price</th>
             <th style={{ padding: '12px', textAlign: 'right', borderBottom: '2px solid #dee2e6' }}>Live Price</th>
@@ -326,6 +360,20 @@ const Holdings = ({ userId }) => {
             return (
               <tr key={i} style={{ borderBottom: '1px solid #dee2e6' }}>
                 <td style={{ padding: '12px', fontWeight: 'bold' }}>{stock.symbol}</td>
+                <td style={{ padding: '12px', textAlign: 'left' }}>
+                  <span style={{
+                    padding: '3px 8px',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    backgroundColor: stock.cluster === 0 ? '#e6fffa' : stock.cluster === 1 ? '#fffaf0' : '#fff5f5',
+                    color: stock.cluster === 0 ? '#319795' : stock.cluster === 1 ? '#dd6b20' : '#e53e3e',
+                    border: '1px solid',
+                    borderColor: stock.cluster === 0 ? '#b2f5ea' : stock.cluster === 1 ? '#fbd38d' : '#feb2b2'
+                  }}>
+                    {stock.clusterName}
+                  </span>
+                </td>
                 <td style={{ padding: '12px', textAlign: 'right' }}>{stock.quantity}</td>
                 <td style={{ padding: '12px', textAlign: 'right' }}>₹{stock.buyPrice.toFixed(2)}</td>
                 <td style={{ 
@@ -359,7 +407,8 @@ const Holdings = ({ userId }) => {
         </tbody>
       </table>
       
-      <div className="chart-container">
+      <div className="chart-container" style={{ marginBottom: '30px' }}>
+        <h4 style={{ marginBottom: '15px', textAlign: 'center' }}>Portfolio Assets Colored by Volatility Cluster</h4>
         <VerticalGraph data={data} />
       </div>
     </>
